@@ -586,7 +586,7 @@ else:
     top_n = 10
 
 # WHY THIS ANALYSIS MATTERS
-st.markdown('<div class="section-title">Why This Analysis Matters</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Why This Analysis Matters?</div>', unsafe_allow_html=True)
 
 st.markdown(
     """
