@@ -1,4 +1,5 @@
 import os
+import base64
 from pathlib import Path
 import pandas as pd
 import streamlit as st
@@ -173,6 +174,77 @@ st.markdown(
         margin-bottom: 18px;
     }
 
+    .image-card {
+        background: #FFFFFF;
+        border: 1.5px solid #E8F3D8;
+        border-radius: 22px;
+        padding: 18px 16px 16px 16px;
+        box-shadow: 0 8px 22px rgba(75, 120, 55, 0.10);
+        margin-bottom: 24px;
+        text-align: center;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        min-height: 315px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .image-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 28px rgba(75, 120, 55, 0.16);
+    }
+
+    .image-wrapper {
+        width: 100%;
+        height: 190px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 12px;
+    }
+
+    .image-wrapper img {
+        max-width: 190px;
+        max-height: 180px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 16px;
+    }
+
+    .image-caption {
+        font-size: 14px;
+        font-weight: 900;
+        color: #2B2D3A;
+        margin-top: 4px;
+        margin-bottom: 10px;
+    }
+
+    .image-badge {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 900;
+        padding: 5px 12px;
+        border-radius: 999px;
+        margin: 0 auto;
+        width: fit-content;
+    }
+
+    .badge-unripe {
+        background-color: #FFF4D8;
+        color: #B87900;
+    }
+
+    .badge-ripe {
+        background-color: #EAF7D6;
+        color: #2F6B24;
+    }
+
+    .badge-rotten {
+        background-color: #FFE9DF;
+        color: #C94F2D;
+    }
+
     section[data-testid="stSidebar"] {
         background-color: #F6FAEF;
         border-right: 1px solid #E3EFD4;
@@ -213,10 +285,12 @@ scanora_colors = [
 
 scanora_green = "#7CB342"
 
+condition_order = ["unripe", "ripe", "rotten"]
+
 condition_colors = {
+    "unripe": "#F5A623",
     "ripe": "#7CB342",
-    "rotten": "#FF7043",
-    "unripe": "#F5A623"
+    "rotten": "#FF7043"
 }
 
 # LOAD DATA
@@ -468,7 +542,7 @@ def get_preview_images(selected_fruit, selected_condition):
     image_dir = Path(__file__).parent / "image"
 
     fruits = ["apple", "banana", "orange"]
-    conditions = ["ripe", "rotten", "unripe"]
+    conditions = condition_order
     image_numbers = [1, 2, 3]
     extensions = ["png", "jpg", "jpeg"]
 
@@ -493,17 +567,16 @@ def get_preview_images(selected_fruit, selected_condition):
     return image_paths
 
 
-def format_preview_caption(image_path):
-    file_name = image_path.stem
-    parts = file_name.split("_")
+def image_to_base64(image_path):
+    suffix = image_path.suffix.lower().replace(".", "")
 
-    if len(parts) >= 3:
-        fruit = parts[0].title()
-        condition = parts[1].title()
-        number = parts[2]
-        return f"{fruit} • {condition} #{number}"
+    if suffix == "jpg":
+        suffix = "jpeg"
 
-    return file_name.replace("_", " ").title()
+    with open(image_path, "rb") as image_file:
+        encoded = base64.b64encode(image_file.read()).decode()
+
+    return f"data:image/{suffix};base64,{encoded}"
 
 
 def show_preview_images(image_paths):
@@ -515,11 +588,34 @@ def show_preview_images(image_paths):
         cols = st.columns(3)
 
         for col, image_path in zip(cols, image_paths[start_idx:start_idx + 3]):
+            file_name = image_path.stem
+            parts = file_name.split("_")
+
+            if len(parts) >= 3:
+                fruit = parts[0].title()
+                condition = parts[1].lower()
+                number = parts[2]
+
+                caption = f"{fruit} #{number}"
+                condition_label = condition.title()
+                badge_class = f"badge-{condition}"
+            else:
+                caption = file_name.replace("_", " ").title()
+                condition_label = "-"
+                badge_class = "badge-ripe"
+
             with col:
-                st.image(
-                    str(image_path),
-                    caption=format_preview_caption(image_path),
-                    width=160
+                st.markdown(
+                    f"""
+                    <div class="image-card">
+                        <div class="image-wrapper">
+                            <img src="{image_to_base64(image_path)}" alt="{caption}">
+                        </div>
+                        <div class="image-caption">{caption}</div>
+                        <div class="image-badge {badge_class}">{condition_label}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
 
 
@@ -555,7 +651,12 @@ st.sidebar.markdown("### Fruits Image Dataset")
 
 if df_image is not None and check_columns(df_image, ["fruit", "condition", "label"]):
     fruit_options = ["Semua"] + sorted(df_image["fruit"].dropna().unique().tolist())
-    condition_options = ["Semua"] + sorted(df_image["condition"].dropna().unique().tolist())
+
+    available_conditions = df_image["condition"].dropna().unique().tolist()
+    condition_options = ["Semua"] + [
+        condition for condition in condition_order
+        if condition in available_conditions
+    ]
 
     selected_fruit = st.sidebar.selectbox("Pilih jenis buah", fruit_options)
     selected_condition = st.sidebar.selectbox("Pilih kondisi buah", condition_options)
@@ -742,6 +843,13 @@ if df_image_filtered is not None and check_columns(df_image_filtered, ["fruit", 
         )
         condition_count.columns = ["condition", "jumlah"]
 
+        condition_count["condition"] = pd.Categorical(
+            condition_count["condition"],
+            categories=condition_order,
+            ordered=True
+        )
+        condition_count = condition_count.sort_values("condition")
+
         col_a, col_b = st.columns([1.2, 1])
 
         with col_a:
@@ -766,6 +874,7 @@ if df_image_filtered is not None and check_columns(df_image_filtered, ["fruit", 
             fig_condition_bar.update_layout(
                 height=460,
                 showlegend=False,
+                xaxis={"categoryorder": "array", "categoryarray": condition_order},
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)"
             )
@@ -851,6 +960,13 @@ if df_image_filtered is not None and check_columns(df_image_filtered, ["fruit", 
                 .reset_index(name="jumlah")
             )
 
+            stacked_data["condition"] = pd.Categorical(
+                stacked_data["condition"],
+                categories=condition_order,
+                ordered=True
+            )
+            stacked_data = stacked_data.sort_values(["fruit", "condition"])
+
             fig_stacked = px.bar(
                 stacked_data,
                 x="fruit",
@@ -862,7 +978,8 @@ if df_image_filtered is not None and check_columns(df_image_filtered, ["fruit", 
                     "condition": "Kondisi Buah",
                     "jumlah": "Jumlah Gambar"
                 },
-                color_discrete_map=condition_colors
+                color_discrete_map=condition_colors,
+                category_orders={"condition": condition_order}
             )
 
             fig_stacked.update_traces(
@@ -883,6 +1000,10 @@ if df_image_filtered is not None and check_columns(df_image_filtered, ["fruit", 
             heatmap_data = pd.crosstab(
                 df_image_filtered["fruit"],
                 df_image_filtered["condition"]
+            )
+
+            heatmap_data = heatmap_data.reindex(
+                columns=[col for col in condition_order if col in heatmap_data.columns]
             )
 
             fig_heatmap = px.imshow(
